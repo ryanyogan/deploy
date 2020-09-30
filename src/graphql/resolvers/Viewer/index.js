@@ -155,21 +155,30 @@ exports.viewerResolvers = {
             }
         }),
         disconnectStripe: (_root, _args, { db, req }) => __awaiter(void 0, void 0, void 0, function* () {
-            const viewer = yield utils_1.authorize(db, req);
-            if (!viewer) {
-                throw new Error("viewer cannot be found");
+            try {
+                const viewer = yield utils_1.authorize(db, req);
+                if (!viewer || !viewer.walletId) {
+                    throw new Error("viewer cannot be found or has not connected with Stripe");
+                }
+                const wallet = yield api_1.Stripe.disconnect(viewer.walletId);
+                if (!wallet) {
+                    throw new Error("stripe disconnect error");
+                }
+                const res = yield db.users.findOneAndUpdate({ _id: viewer._id }, { $set: { walletId: undefined } }, { returnOriginal: false });
+                if (!res.value) {
+                    throw new Error("viewer could not be updated");
+                }
+                return {
+                    _id: res.value._id,
+                    token: res.value.token,
+                    avatar: res.value.avatar,
+                    walletId: res.value.walletId,
+                    didRequest: true,
+                };
             }
-            const res = yield db.users.findOneAndUpdate({ _id: viewer._id }, { $set: { walletId: undefined } }, { returnOriginal: false });
-            if (!res.value) {
-                throw new Error("viewer could not be updated");
+            catch (error) {
+                throw new Error(`Failed to disconnect with Stripe: ${error}`);
             }
-            return {
-                _id: res.value._id,
-                token: res.value.token,
-                avatar: res.value.avatar,
-                walletId: res.value.walletId,
-                didRequest: true,
-            };
         }),
     },
     Viewer: {
