@@ -21,9 +21,7 @@ exports.connectDatabase = () => __awaiter(void 0, void 0, void 0, function* () {
         },
         synchronize: true,
         logging: false,
-        entities: ["src/database/entity/**/*.ts"],
-        migrations: ["src/database/migration/**/*.ts"],
-        subscribers: ["src/database/subscriber/**/*.ts"],
+        entities: [entity_1.BookingEntity, entity_1.ListingEntity, entity_1.UserEntity],
     });
     return {
         bookings: connection.getRepository(entity_1.BookingEntity),
