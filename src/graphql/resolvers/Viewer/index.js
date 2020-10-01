@@ -24,9 +24,12 @@ const cookieOptions = {
     secure: process.env.NODE_ENV === "development" ? false : true,
 };
 const logInViaCookie = (token, db, req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const updateResponse = yield db.users.findOneAndUpdate({ _id: req.signedCookies.viewer }, { $set: { token } }, { returnOriginal: false });
-    const viewer = updateResponse.value;
-    if (!viewer) {
+    const viewer = yield db.users.findOne({ id: req.signedCookies.viewer });
+    if (viewer) {
+        viewer.token = token;
+        yield viewer.save();
+    }
+    else {
         res.clearCookie("viewer", cookieOptions);
     }
     return viewer;
@@ -57,20 +60,17 @@ const logInViaGoogle = (code, token, db, res) => __awaiter(void 0, void 0, void 
     if (!userId || !userName || !userAvatar || !userEmail) {
         throw new Error("Google login error");
     }
-    const updateRes = yield db.users.findOneAndUpdate({ _id: userId }, {
-        $set: {
-            name: userName,
-            avatar: userAvatar,
-            contact: userEmail,
-            token,
-        },
-    }, {
-        returnOriginal: false,
-    });
-    let viewer = updateRes.value;
-    if (!viewer) {
-        const insertResult = yield db.users.insertOne({
-            _id: userId,
+    let viewer = yield db.users.findOne({ id: userId });
+    if (viewer) {
+        viewer.name = userName;
+        viewer.avatar = userAvatar;
+        viewer.contact = userEmail;
+        viewer.token = token;
+        yield viewer.save();
+    }
+    else {
+        const newUser = {
+            id: userId,
             token,
             name: userName,
             avatar: userAvatar,
@@ -78,8 +78,8 @@ const logInViaGoogle = (code, token, db, res) => __awaiter(void 0, void 0, void 
             income: 0,
             bookings: [],
             listings: [],
-        });
-        viewer = insertResult.ops[0];
+        };
+        viewer = yield db.users.create(newUser).save();
     }
     res.cookie("viewer", userId, Object.assign(Object.assign({}, cookieOptions), { maxAge: 365 * 24 * 60 * 60 * 1000 }));
     return viewer;
@@ -107,7 +107,7 @@ exports.viewerResolvers = {
                     return { didRequest: true };
                 }
                 return {
-                    _id: viewer._id,
+                    id: viewer.id,
                     token: viewer.token,
                     avatar: viewer.avatar,
                     walletId: viewer.walletId,
@@ -138,15 +138,13 @@ exports.viewerResolvers = {
                 if (!wallet) {
                     throw new Error("stripe grant error");
                 }
-                const res = yield db.users.findOneAndUpdate({ _id: viewer._id }, { $set: { walletId: wallet.stripe_user_id } }, { returnOriginal: false });
-                if (!res.value) {
-                    throw new Error("viewer could not be updated");
-                }
+                viewer.walletId = wallet.stripe_user_id;
+                yield viewer.save();
                 return {
-                    _id: res.value._id,
-                    token: res.value.token,
-                    avatar: res.value.avatar,
-                    walletId: res.value.walletId,
+                    id: viewer.id,
+                    token: viewer.token,
+                    avatar: viewer.avatar,
+                    walletId: viewer.walletId,
                     didRequest: true,
                 };
             }
@@ -164,15 +162,13 @@ exports.viewerResolvers = {
                 if (!wallet) {
                     throw new Error("stripe disconnect error");
                 }
-                const res = yield db.users.findOneAndUpdate({ _id: viewer._id }, { $set: { walletId: undefined } }, { returnOriginal: false });
-                if (!res.value) {
-                    throw new Error("viewer could not be updated");
-                }
+                viewer.walletId = null;
+                yield viewer.save();
                 return {
-                    _id: res.value._id,
-                    token: res.value.token,
-                    avatar: res.value.avatar,
-                    walletId: res.value.walletId,
+                    id: viewer.id,
+                    token: viewer.token,
+                    avatar: viewer.avatar,
+                    walletId: viewer.walletId,
                     didRequest: true,
                 };
             }
@@ -182,9 +178,6 @@ exports.viewerResolvers = {
         }),
     },
     Viewer: {
-        id: (viewer) => {
-            return viewer._id;
-        },
         hasWallet: (viewer) => {
             return viewer.walletId ? true : undefined;
         },

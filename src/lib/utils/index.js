@@ -14,8 +14,10 @@ exports.authorize = void 0;
 exports.authorize = (db, req) => __awaiter(void 0, void 0, void 0, function* () {
     const token = req.get("X-CSRF-TOKEN");
     const viewer = yield db.users.findOne({
-        _id: req.signedCookies.viewer,
+        id: req.signedCookies.viewer,
         token,
     });
+    if (!viewer)
+        return null;
     return viewer;
 });

@@ -12,15 +12,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-if (process.env.NODE_ENV === "development") {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    require("dotenv").config();
-}
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+require("dotenv").config();
 const apollo_server_express_1 = require("apollo-server-express");
 const body_parser_1 = __importDefault(require("body-parser"));
 const compression_1 = __importDefault(require("compression"));
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const express_1 = __importDefault(require("express"));
+require("reflect-metadata");
 const database_1 = require("./database");
 const graphql_1 = require("./graphql");
 const mount = (app) => __awaiter(void 0, void 0, void 0, function* () {

@@ -15,13 +15,13 @@ exports.userResolver = {
     Query: {
         user: (_root, { id }, { db, req }) => __awaiter(void 0, void 0, void 0, function* () {
             try {
-                const user = yield db.users.findOne({ _id: id });
+                const user = (yield db.users.findOne({ id }));
                 if (!user) {
                     throw new Error("User cannot be found");
                 }
                 // Is the current client viewer, the logged in user?
                 const viewer = yield utils_1.authorize(db, req);
-                if (viewer && viewer._id === user._id) {
+                if (viewer && viewer.id === user.id) {
                     user.authorized = true;
                 }
                 return user;
@@ -32,7 +32,6 @@ exports.userResolver = {
         }),
     },
     User: {
-        id: (user) => user._id,
         hasWallet: (user) => Boolean(user.walletId),
         income: (user) => user.authorized ? user.income : null,
         bookings: (user, { limit, page }, { db }) => __awaiter(void 0, void 0, void 0, function* () {
@@ -44,13 +43,12 @@ exports.userResolver = {
                     total: 0,
                     result: [],
                 };
-                let cursor = db.bookings.find({
-                    _id: { $in: user.bookings },
+                const bookings = yield db.bookings.findByIds(user.bookings, {
+                    skip: page > 0 ? (page - 1) * limit : 0,
+                    take: limit,
                 });
-                cursor = cursor.skip(page > 0 ? (page - 1) * limit : 0);
-                cursor = cursor.limit(limit);
-                data.total = yield cursor.count();
-                data.result = yield cursor.toArray();
+                data.total = user.bookings.length;
+                data.result = bookings;
                 return data;
             }
             catch (error) {
@@ -63,13 +61,12 @@ exports.userResolver = {
                     total: 0,
                     result: [],
                 };
-                let cursor = db.listings.find({
-                    _id: { $in: user.listings },
+                const listings = yield db.listings.findByIds(user.listings, {
+                    skip: page > 0 ? (page - 1) * limit : 0,
+                    take: limit,
                 });
-                cursor = cursor.skip(page > 0 ? (page - 1) * limit : 0);
-                cursor = cursor.limit(limit);
-                data.total = yield cursor.count();
-                data.result = yield cursor.toArray();
+                data.total = user.listings.length;
+                data.result = listings;
                 return data;
             }
             catch (error) {

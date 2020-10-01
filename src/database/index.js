@@ -10,17 +10,24 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.connectDatabase = void 0;
-const mongodb_1 = require("mongodb");
-const url = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_USER_PASSWORD}@${process.env.DB_CLUSTER}.mongodb.net/${process.env.DB_NAME}?retryWrites=true&w=majority`;
+const typeorm_1 = require("typeorm");
+const entity_1 = require("./entity");
 exports.connectDatabase = () => __awaiter(void 0, void 0, void 0, function* () {
-    const client = yield mongodb_1.MongoClient.connect(url, {
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
+    const connection = yield typeorm_1.createConnection({
+        type: "postgres",
+        url: `${process.env.DATABASE_URL}`,
+        ssl: {
+            rejectUnauthorized: false,
+        },
+        synchronize: true,
+        logging: false,
+        entities: ["src/database/entity/**/*.ts"],
+        migrations: ["src/database/migration/**/*.ts"],
+        subscribers: ["src/database/subscriber/**/*.ts"],
     });
-    const db = client.db("main");
     return {
-        bookings: db.collection("bookings"),
-        listings: db.collection("listings"),
-        users: db.collection("users"),
+        bookings: connection.getRepository(entity_1.BookingEntity),
+        listings: connection.getRepository(entity_1.ListingEntity),
+        users: connection.getRepository(entity_1.UserEntity),
     };
 });

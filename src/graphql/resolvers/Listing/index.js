@@ -8,9 +8,12 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.listingResolvers = void 0;
-const mongodb_1 = require("mongodb");
+const crypto_1 = __importDefault(require("crypto"));
 const api_1 = require("../../../lib/api");
 const types_1 = require("../../../lib/types");
 const utils_1 = require("../../../lib/utils");
@@ -33,12 +36,12 @@ exports.listingResolvers = {
     Query: {
         listing: (_root, { id }, { db, req }) => __awaiter(void 0, void 0, void 0, function* () {
             try {
-                const listing = yield db.listings.findOne({ _id: new mongodb_1.ObjectID(id) });
+                const listing = (yield db.listings.findOne({ id }));
                 if (!listing) {
                     throw new Error("listing cannot be found");
                 }
                 const viewer = yield utils_1.authorize(db, req);
-                if (viewer && viewer._id === listing.host) {
+                if (viewer && viewer.id === listing.host) {
                     listing.authoried = true;
                 }
                 return listing;
@@ -49,12 +52,12 @@ exports.listingResolvers = {
         }),
         listings: (_root, { location, filter, limit, page }, { db }) => __awaiter(void 0, void 0, void 0, function* () {
             try {
+                const query = {};
                 const data = {
                     region: null,
                     total: 0,
                     result: [],
                 };
-                const query = {};
                 if (location) {
                     const { country, admin, city } = yield api_1.Google.geocode(location);
                     if (city)
@@ -71,17 +74,22 @@ exports.listingResolvers = {
                     const adminText = admin ? `${admin}, ` : "";
                     data.region = `${cityText}${adminText}${country}`;
                 }
-                let cursor = db.listings.find(query);
+                let order = null;
                 if (filter && filter === types_2.ListingsFilter.PRICE_LOW_TO_HIGH) {
-                    cursor = cursor.sort({ price: 1 });
+                    order = { price: "ASC" };
                 }
                 if (filter && filter === types_2.ListingsFilter.PRICE_HIGH_TO_LOW) {
-                    cursor = cursor.sort({ price: -1 });
+                    order = { price: "DESC" };
                 }
-                cursor = cursor.skip(page > 0 ? (page - 1) * limit : 0);
-                cursor = cursor.limit(limit);
-                data.total = yield cursor.count();
-                data.result = yield cursor.toArray();
+                const count = yield db.listings.count(query);
+                const listings = yield db.listings.find({
+                    where: Object.assign({}, query),
+                    order: Object.assign({}, order),
+                    skip: page > 0 ? (page - 1) * limit : 0,
+                    take: limit,
+                });
+                data.total = count;
+                data.result = listings;
                 return data;
             }
             catch (error) {
@@ -90,9 +98,8 @@ exports.listingResolvers = {
         }),
     },
     Listing: {
-        id: (listing) => listing._id.toString(),
         host: (listing, _args, { db }) => __awaiter(void 0, void 0, void 0, function* () {
-            const host = yield db.users.findOne({ _id: listing.host });
+            const host = yield db.users.findOne({ id: listing.host });
             if (!host) {
                 throw new Error("host cannot be found");
             }
@@ -110,13 +117,12 @@ exports.listingResolvers = {
                     total: 0,
                     result: [],
                 };
-                let cursor = db.bookings.find({
-                    _id: { $in: listing.bookings },
+                const bookings = yield db.bookings.findByIds(listing.bookings, {
+                    skip: page > 0 ? (page - 1) * limit : 0,
+                    take: limit,
                 });
-                cursor = cursor.skip(page > 0 ? (page - 1) * limit : 0);
-                cursor = cursor.limit(limit);
-                data.total = yield cursor.count();
-                data.result = yield cursor.toArray();
+                data.total = listing.bookings.length;
+                data.result = bookings;
                 return data;
             }
             catch (error) {
@@ -136,11 +142,12 @@ exports.listingResolvers = {
                 throw new Error("invalid address entry");
             }
             const imageUrl = yield api_1.Cloudinary.upload(input.image);
-            const insertResult = yield db.listings.insertOne(Object.assign(Object.assign({ _id: new mongodb_1.ObjectID() }, input), { image: imageUrl, bookings: [], bookingsIndex: {}, country,
+            const newListing = Object.assign(Object.assign({ id: crypto_1.default.randomBytes(16).toString("hex") }, input), { image: imageUrl, bookings: [], bookingsIndex: {}, country,
                 admin,
-                city, host: viewer._id }));
-            const insertedListing = insertResult.ops[0];
-            yield db.users.updateOne({ _id: viewer._id }, { $push: { listings: insertedListing._id } });
+                city, host: viewer.id });
+            const insertedListing = yield db.listings.create(newListing).save();
+            viewer.listings.push(insertedListing.id);
+            yield viewer.save();
             return insertedListing;
         }),
     },

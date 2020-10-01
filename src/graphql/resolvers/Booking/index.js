@@ -8,9 +8,12 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.bookingResolvers = exports.resolveBookingsIndex = void 0;
-const mongodb_1 = require("mongodb");
+const crypto_1 = __importDefault(require("crypto"));
 const api_1 = require("../../../lib/api");
 const utils_1 = require("../../../lib/utils");
 const millisecondsPerDay = 86400000;
@@ -40,12 +43,11 @@ exports.resolveBookingsIndex = (bookingsIndex, checkInDate, checkOutDate) => {
 };
 exports.bookingResolvers = {
     Booking: {
-        id: (booking) => booking._id.toString(),
         listing: (booking, _args, { db }) => {
-            return db.listings.findOne({ _id: booking.listing });
+            return db.listings.findOne({ id: booking.listing });
         },
         tenant: (booking, _args, { db }) => {
-            return db.users.findOne({ _id: booking.tenant });
+            return db.users.findOne({ id: booking.tenant });
         },
     },
     Mutation: {
@@ -56,13 +58,11 @@ exports.bookingResolvers = {
                 if (!viewer) {
                     throw new Error("viewer cannot be found");
                 }
-                const listing = yield db.listings.findOne({
-                    _id: new mongodb_1.ObjectID(id),
-                });
+                const listing = yield db.listings.findOne({ id });
                 if (!listing) {
                     throw new Error("listing cannot be found");
                 }
-                if (listing.host === viewer._id) {
+                if (listing.host === viewer.id) {
                     throw new Error("host may not book their own listing");
                 }
                 const today = new Date();
@@ -81,25 +81,26 @@ exports.bookingResolvers = {
                 const bookingsIndex = exports.resolveBookingsIndex(listing.bookingsIndex, checkIn, checkOut);
                 const totalPrice = listing.price *
                     ((checkOutDate.getTime() - checkInDate.getTime()) / 86400000 + 1);
-                const host = yield db.users.findOne({ _id: listing.host });
+                const host = yield db.users.findOne({ id: listing.host });
                 if (!host || !host.walletId) {
                     throw new Error("the host either cannot be found or is not connected to Stripe");
                 }
                 yield api_1.Stripe.charge(totalPrice, source, host.walletId);
-                const insertRes = yield db.bookings.insertOne({
-                    _id: new mongodb_1.ObjectID(),
-                    listing: listing._id,
-                    tenant: viewer._id,
+                const newBooking = {
+                    id: crypto_1.default.randomBytes(16).toString("hex"),
+                    listing: listing.id,
+                    tenant: viewer.id,
                     checkIn,
                     checkOut,
-                });
-                const insertedBooking = insertRes.ops[0];
-                yield db.users.updateOne({ _id: host._id }, { $inc: { income: totalPrice } });
-                yield db.users.updateOne({ _id: viewer._id }, { $push: { bookings: insertedBooking._id } });
-                yield db.listings.updateOne({ _id: listing._id }, {
-                    $set: { bookingsIndex },
-                    $push: { bookings: insertedBooking._id },
-                });
+                };
+                const insertedBooking = yield db.bookings.create(newBooking).save();
+                host.income = host.income + totalPrice;
+                yield host.save();
+                viewer.bookings.push(insertedBooking.id);
+                yield viewer.save();
+                listing.bookingsIndex = bookingsIndex;
+                listing.bookings.push(insertedBooking.id);
+                yield listing.save();
                 return insertedBooking;
             }
             catch (error) {
